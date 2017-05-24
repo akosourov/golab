@@ -58,7 +58,7 @@ func TestNearest(t *testing.T) {
 			Lon: 74.588279,
 		},
 	})
-	drivers := s.Nearest(1000, 42.876420, 74.588332)
+	drivers := s.Nearest(1, 42.876420, 74.588332)
 	assert.Equal(t, len(drivers), 1)
 }
 
@@ -74,6 +74,6 @@ func BenchmarkNearest(b *testing.B) {
 		})
 	}
 	for i := 1; i <= b.N; i++ {
-		s.Nearest(1000, 123, 123)
+		s.Nearest(1, 123, 123)
 	}
 }
