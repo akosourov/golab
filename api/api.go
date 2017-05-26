@@ -11,6 +11,19 @@ type API struct {
 	bindAddr string
 }
 
+func New(bindAddr string) *API {
+	a := &API{
+		echo: echo.New(),
+		bindAddr: bindAddr,
+	}
+	g := a.echo.Group("/api")
+	g.POST("/driver/", a.addDriver)
+	g.GET("/driver/:id", a.getDriver)
+	g.DELETE("/driver/:id", a.deleteDriver)
+	g.GET("/driver/:lat/:lon/nearest", a.nearestDrivers)
+	return a
+}
+
 func (a *API) addDriver(c echo.Context) error {
 	p := &Payload{}
 	if err := c.Bind(p); err != nil {
@@ -90,16 +103,4 @@ func (a *API) Start() error {
 	return a.echo.Start(a.bindAddr)
 }
 
-func New(bindAddr string) *API {
-	a := &API{
-		echo: echo.New(),
-		bindAddr: bindAddr,
-	}
-	g := a.echo.Group("/api")
-	g.POST("/driver/", a.addDriver)
-	g.GET("/driver/:id", a.getDriver)
-	g.DELETE("/driver/:id", a.deleteDriver)
-	g.GET("/driver/:lat/:lon/nearest", a.nearestDrivers)
-	return a
-}
 

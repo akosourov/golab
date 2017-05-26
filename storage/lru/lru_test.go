@@ -21,6 +21,22 @@ func TestLRU_Add(t *testing.T) {
 	assert.True(t, l.Add(2, 1), "Должно произойти вытеснение")
 }
 
+func TestLRU_Get(t *testing.T) {
+	l, _ := New(1)
+	l.Add(1, 1)
+	v, ok := l.Get(1)
+	assert.True(t, ok)
+	assert.Equal(t, v, 1)
+}
+
+func TestLRU_Add_Get(t *testing.T) {
+	l, _ := New(1)
+	l.Add(1, 1)
+	l.Add(1, 2)
+	v, _ := l.Get(1)
+	assert.Equal(t, v, 2)
+}
+
 func TestLRU_Len(t *testing.T) {
 	l, _ := New(2)
 	l.Add(1, 1)
@@ -89,14 +105,33 @@ func TestLRU (t *testing.T) {
 	l, err := New(100)
 	assert.NoError(t, err)
 
-	for i := 0; i < 100 + 100; i++ {
+	for i := 0; i < 200; i++ {
 		l.Add(i, i)
 	}
 	assert.Equal(t, l.Len(), 100)
 
-	for k := range l.Keys() {
-		fk, ok := l.Get(k)
+	assert.Equal(t, len(l.Keys()), 100)
+	for i, k := range l.Keys() {
+		v, ok := l.Get(k)
 		assert.True(t, ok)
-		assert.Equal(t, fk, k)
+		assert.NotNil(t, v)
+		assert.Equal(t, k, v)
+		// Проверяем, что новые ключи, вытеснили старые
+		assert.Equal(t, k, 200-1-i)
 	}
+
+	for i := 0; i < 100; i++ {
+		_, ok := l.Get(i)
+		assert.False(t, ok)
+	}
+	for i := 100; i < 200; i++ {
+		_, ok := l.Get(i)
+		assert.True(t, ok)
+	}
+
+	l.Purge()
+	assert.Equal(t, l.Len(), 0)
+	v, ok := l.Get(150)
+	assert.False(t, ok)
+	assert.Nil(t, v)
 }
