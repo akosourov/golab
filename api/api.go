@@ -1,18 +1,29 @@
 package api
 
 import (
-	"github.com/labstack/echo"
+	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
+
+	"github.com/akosourov/golab/storage"
+	"github.com/labstack/echo"
+	"github.com/dhconnelly/rtreego"
 )
 
+const MAX_NEAREST_DRIVERS = 10
+
 type API struct {
-	echo     *echo.Echo
-	bindAddr string
+	database  *storage.DriverStorage
+	waitGroup sync.WaitGroup
+	echo      *echo.Echo
+	bindAddr  string
 }
 
-func New(bindAddr string) *API {
+func New(bindAddr string, lruSize int) *API {
 	a := &API{
+		database: storage.New(lruSize),
 		echo: echo.New(),
 		bindAddr: bindAddr,
 	}
@@ -24,6 +35,26 @@ func New(bindAddr string) *API {
 	return a
 }
 
+
+func (a *API) Start() {
+	a.waitGroup.Add(1)
+	go func() {
+		a.echo.Start(a.bindAddr)
+		a.waitGroup.Done()
+	}()
+	go a.deleteExpired()
+}
+
+func (a *API) WaitStop() {
+	a.waitGroup.Wait()
+}
+
+func (a *API) deleteExpired() {
+	for range time.Tick(1) {
+		a.database.DeleteExpired()
+	}
+}
+
 func (a *API) addDriver(c echo.Context) error {
 	p := &Payload{}
 	if err := c.Bind(p); err != nil {
@@ -32,9 +63,22 @@ func (a *API) addDriver(c echo.Context) error {
 			Message: "Set content-type application/json or check payload data",
 		})
 	}
+	driver := &storage.Driver{
+		ID: p.DriverID,
+		LastLocation: storage.Location{
+			Lat: p.Location.Latitude,
+			Lon: p.Location.Longitude,
+		},
+	}
+	if err := a.database.Set(driver); err != nil {
+		return c.JSON(http.StatusBadRequest, &DefaultResponse{
+			Success: false,
+			Message: fmt.Sprintf("Could not add driver - %s", err.Error()),
+		})
+	}
 	return c.JSON(http.StatusOK, DriverResponse{
-		Success: false,
-		Message: "Added",
+		Success: true,
+		Message: "Driver was added",
 	})
 }
 
@@ -42,25 +86,38 @@ func (a *API) getDriver(c echo.Context) error {
 	driverID := c.Param("id")
 	id, err := strconv.Atoi(driverID)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, DefaultResponse{
+		return c.JSON(http.StatusBadRequest, &DefaultResponse{
 			Success: false,
-			Message: "could not convert string to integer",
+			Message: "Could not convert string to integer",
 		})
 	}
-	return c.JSON(http.StatusOK, DriverResponse{
+	driver, err := a.database.Get(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, &DefaultResponse{
+			Success: false,
+			Message: fmt.Sprintf("Could not get driver - %s", err.Error()),
+		})
+	}
+	return c.JSON(http.StatusOK, &DriverResponse{
 		Success: true,
 		Message: "Driver was found",
-		Driver:  id,
+		Driver:  driver,
 	})
 }
 
 func (a *API) deleteDriver(c echo.Context) error {
 	driverID := c.Param("id")
-	_, err := strconv.Atoi(driverID)
+	id, err := strconv.Atoi(driverID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, DefaultResponse{
 			Success: false,
-			Message: "Driver s was deleted",
+			Message: "Could not convert string to integer",
+		})
+	}
+	if err := a.database.Delete(id); err != nil {
+		return c.JSON(http.StatusBadRequest, DefaultResponse{
+			Success: false,
+			Message: fmt.Sprintf("Could not delete driver - %s", err.Error()),
 		})
 	}
 	return c.JSON(http.StatusOK, &DefaultResponse{
@@ -75,32 +132,30 @@ func (a *API) nearestDrivers(c echo.Context) error {
 	if lat == "" || lon == "" {
 		return c.JSON(http.StatusBadRequest, &DefaultResponse{
 			Success: false,
-			Message: "Empty coordinates",
+			Message: "Bad coordinates",
 		})
 	}
-	_, err := strconv.ParseFloat(lat, 64)
+	lt, err := strconv.ParseFloat(lat, 64)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, &DefaultResponse{
 			Success: false,
 			Message: "Bad latitude",
 		})
 	}
-	_, err = strconv.ParseFloat(lon, 64)
+	ln, err := strconv.ParseFloat(lon, 64)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, &DefaultResponse{
 			Success: false,
 			Message: "Bad longitude",
 		})
 	}
-	// TODO add nearest
+	drivers := a.database.Nearest(rtreego.Point{lt, ln}, MAX_NEAREST_DRIVERS)
 	return c.JSON(http.StatusOK, &NearestDriverResponse{
 		Success: true,
 		Message: "Nearest drivers was found",
+		Drivers: drivers,
 	})
 }
 
-func (a *API) Start() error {
-	return a.echo.Start(a.bindAddr)
-}
 
 
